@@ -31,7 +31,7 @@ class Config extends scala.annotation.StaticAnnotation {
         }
         val implicitStats = types.collect {
           case typ: Type =>
-            q"""_root_.scala.Predef.implicitly[_root_.metaconfig.IsConfig[$typ]]"""
+            q"""_root_.scala.Predef.implicitly[_root_.io.circe.Decoder[$typ]]"""
         }
 
         val fieldsDef: Seq[Stat] = {

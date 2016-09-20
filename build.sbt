@@ -14,9 +14,12 @@ lazy val compilerOptions = Seq(
   "-Xlint"
 )
 
+val circeVersion = "0.5.1"
+
 lazy val macroSettings = Seq(
   libraryDependencies += "org.scalameta" %% "scalameta" % "1.1.0",
-  addCompilerPlugin("org.scalameta" % "paradise" % "3.0.0-M5" cross CrossVersion.full),
+  addCompilerPlugin(
+    "org.scalameta" % "paradise" % "3.0.0-M5" cross CrossVersion.full),
   scalacOptions += "-Xplugin-require:macroparadise"
 )
 
@@ -72,14 +75,16 @@ lazy val buildSettings = Seq(
   updateOptions := updateOptions.value.withCachedResolution(true)
 )
 
-
-
 lazy val allSettings = commonSettings ++ buildSettings ++ publishSettings
-
 
 lazy val macros = project
   .settings(allSettings: _*)
   .settings(macroSettings: _*)
   .settings(
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-core",
+      "io.circe" %% "circe-generic",
+      "io.circe" %% "circe-parser"
+    ).map(_ % circeVersion),
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.0" % "test"
   )
