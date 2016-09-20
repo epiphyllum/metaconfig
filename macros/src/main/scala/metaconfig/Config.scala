@@ -29,9 +29,9 @@ class Config extends scala.annotation.StaticAnnotation {
         val fields: Seq[Lit] = flatParams.map{ x =>
           Lit(x.name.syntax)
         }
-        val implicitStats = types.map {
-          typ =>
-            q"_root_.scala.Predef.implicitly[_root_.metaconfig.IsConfig[${typ.asInstanceOf[Type]}]]"
+        val implicitStats = types.collect {
+          case typ: Type =>
+            q"""_root_.scala.Predef.implicitly[_root_.metaconfig.IsConfig[$typ]]"""
         }
 
         val fieldsDef: Seq[Stat] = {
