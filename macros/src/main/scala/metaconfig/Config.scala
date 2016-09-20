@@ -1,14 +1,17 @@
 package metaconfig
 
 import scala.annotation.compileTimeOnly
-import scala.collection.immutable
+import scala.collection.immutable.Seq
 import scala.meta._
+import scala.meta.tokens.Token.Constant
 
-trait Decoder[T]
-object Decoder{
-  implicit object IntD extends Decoder[Int]
-  implicit object StringD extends Decoder[String]
-  implicit object BoolD extends Decoder[Boolean]
+trait IsConfig[T] {
+  def fields: Seq[String] = Nil
+}
+object IsConfig{
+  implicit object IntD extends IsConfig[Int]
+  implicit object StringD extends IsConfig[String]
+  implicit object BoolD extends IsConfig[Boolean]
 }
 
 @compileTimeOnly("@metaconfig.Config not expanded")
@@ -23,14 +26,22 @@ class Config extends scala.annotation.StaticAnnotation {
           case x if x.decltpe.isDefined =>
             x.decltpe.get
         }
+        val fields: Seq[Lit] = flatParams.map{ x =>
+          Lit(x.name.syntax)
+        }
         val implicitStats = types.map {
           typ =>
-            q"implicitly[_root_.metaconfig.Decoder[${typ.asInstanceOf[Type]}]]"
+            q"_root_.scala.Predef.implicitly[_root_.metaconfig.IsConfig[${typ.asInstanceOf[Type]}]]"
         }
-        val newStats = immutable.Seq(implicitStats ++ stats:_*)
+
+        val fieldsDef: Seq[Stat] = {
+          val body = Term.Apply(q"_root_.scala.collection.immutable.Seq", fields)
+          Seq(q"def fields = $body")
+        }
+        val newStats = implicitStats ++ fieldsDef ++ stats
         println(types)
         val newTemplate = template"""
-        { ..$earlyStats } with ..$ctorcalls { $param => ..${newStats} }
+        { ..$earlyStats } with ..$ctorcalls { $param => ..$newStats }
 
                                   """
         val result =
