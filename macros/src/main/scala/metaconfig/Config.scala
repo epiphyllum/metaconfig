@@ -17,7 +17,7 @@ object String2AnyMap {
       try {
         Some(someMap.asInstanceOf[Map[String, Any]])
       } catch {
-        case e: ClassCastException =>
+        case _: ClassCastException =>
           None
       }
   }
@@ -29,7 +29,10 @@ object Reader {
         try {
           f.applyOrElse(
             any,
-            (x: Any) => Left(new IllegalArgumentException(x.toString)))
+            (x: Any) =>
+              Left(
+                new IllegalArgumentException(
+                  s"value '$x' of type ${x.getClass.getSimpleName}.")))
         } catch {
           case e: ConfigError => Left(e)
         }
@@ -44,7 +47,6 @@ object Reader {
 @compileTimeOnly("@metaconfig.Config not expanded")
 class Config extends scala.annotation.StaticAnnotation {
 
-
   inline def apply(defn: Any): Any = meta {
     def genReader(typ: Type, params: Seq[Term.Param]): Defn.Val = {
       def defaultArgs: Seq[Term.Arg] = {
@@ -53,9 +55,11 @@ class Config extends scala.annotation.StaticAnnotation {
             val nameLit = Lit(p.name.syntax)
             val pTyp = p.decltpe.get.asInstanceOf[Type]
             val pName = p.name.asInstanceOf[Term.Name]
-            Term.Arg.Named(p.name.asInstanceOf[Term.Name], q"get[$pTyp]($nameLit, $pName)")
+            Term.Arg.Named(p.name.asInstanceOf[Term.Name],
+                           q"get[$pTyp]($nameLit, $pName)")
         }
       }
+      val classLit = Lit(typ.syntax)
       val constructor = Ctor.Ref.Name(typ.syntax)
       q"""val reader = new _root_.metaconfig.Reader[$typ] {
           override def read(any: Any): _root_.metaconfig.Result[$typ] = {
@@ -64,7 +68,16 @@ class Config extends scala.annotation.StaticAnnotation {
                 def get[T](
                     path: String, default: T)(
                     implicit ev: _root_.metaconfig.Reader[T]) = {
-                  ev.read(map.getOrElse(path, default)).right.get.asInstanceOf[T]
+                  ev.read(map.getOrElse(path, default)) match {
+                    case Right(e) => e.asInstanceOf[T]
+                    case Left(e) =>
+                      val msg =
+                        "Error reading field " + path +
+                        " on class " + $classLit +
+                        ". Expected argument of type " + default.getClass.getSimpleName +
+                        ". Obtained " + e.getMessage()
+                      throw _root_.metaconfig.ConfigError(msg)
+                  }
                 }
                 Right(new $constructor(..$defaultArgs))
             }
@@ -97,7 +110,7 @@ class Config extends scala.annotation.StaticAnnotation {
             Term.Apply(q"_root_.scala.collection.immutable.Map", fields)
           Seq(q"def fields = $body")
         }
-        val typReader = genReader(tname,flatParams)
+        val typReader = genReader(tname, flatParams)
         val newStats = Seq(typReader) ++ stats
         println(types)
         val newTemplate = template"""
