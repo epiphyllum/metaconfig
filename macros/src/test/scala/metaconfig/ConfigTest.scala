@@ -19,7 +19,7 @@ class ConfigTest extends FunSuite {
   @Config
   case class HasList(i: Seq[Int])
 
-  val b = new Bar(0, true, "str")
+  val b = Bar(0, true, "str")
   test("invalid field") {
     assert(
       b.reader.read(Map("is" -> 2, "var" -> 3)) ==
@@ -61,6 +61,11 @@ class ConfigTest extends FunSuite {
     )
     val o = Outer(2, Inner(3)).reader.read(m)
     println(o)
+  }
+
+  test("Seq") {
+    val lst = HasList(List(1, 2, 3))
+    assert(lst.reader.read(Map("i" -> Seq(666, 777))) == Right(HasList(Seq(666, 777))))
   }
 
 }
