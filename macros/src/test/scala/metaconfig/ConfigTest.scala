@@ -6,7 +6,7 @@ class ConfigTest extends FunSuite {
   type Result[T] = Either[Throwable, T]
 
   @Config
-  case class Bar(val i: Int, val b: Boolean, val s: String)
+  case class Bar(i: Int, b: Boolean, s: String)
 
   class Foo(val i: Int, val b: Boolean, val s: String) {
     val reader = new Reader[Foo] {
@@ -33,7 +33,11 @@ class ConfigTest extends FunSuite {
   }
 
   test("basic") {
-    println(new Bar(0, true, "str").reader.read(Map("i" -> 2)))
+    val b = new Bar(0, true, "str")
+    val read = b.reader.read(Map("is" -> 2))
+    val write = b.fields
+    println(read)
+    println(write)
   }
 
 }

@@ -59,6 +59,7 @@ class Config extends scala.annotation.StaticAnnotation {
                            q"get[$pTyp]($nameLit, $pName)")
         }
       }
+      val argLits = params.map(x => Lit(x.name.syntax))
       val classLit = Lit(typ.syntax)
       val constructor = Ctor.Ref.Name(typ.syntax)
       q"""val reader = new _root_.metaconfig.Reader[$typ] {
@@ -70,16 +71,24 @@ class Config extends scala.annotation.StaticAnnotation {
                     implicit ev: _root_.metaconfig.Reader[T]) = {
                   ev.read(map.getOrElse(path, default)) match {
                     case Right(e) => e.asInstanceOf[T]
-                    case Left(e) =>
+                    case Left(e: java.lang.IllegalArgumentException) =>
                       val msg =
                         "Error reading field " + path +
                         " on class " + $classLit +
                         ". Expected argument of type " + default.getClass.getSimpleName +
                         ". Obtained " + e.getMessage()
                       throw _root_.metaconfig.ConfigError(msg)
+                    case Left(e) => throw e
                   }
                 }
-                Right(new $constructor(..$defaultArgs))
+                val validFields = _root_.scala.collection.immutable.Set(..$argLits)
+                val invalidFields = map.keys.filterNot(validFields)
+                if (invalidFields.nonEmpty) {
+                  val msg = "Invalid fields: " + invalidFields.mkString(", ")
+                  Left(new _root_.metaconfig.ConfigError(msg))
+                } else {
+                  Right(new $constructor(..$defaultArgs))
+                }
             }
           }
         }
@@ -100,18 +109,13 @@ class Config extends scala.annotation.StaticAnnotation {
             val nameLit = Lit(x.name.syntax)
             q"($nameLit, ${x.name.asInstanceOf[Term.Name]})"
         }
-        val implicitStats = types.collect {
-          case typ: Type =>
-            q"""_root_.scala.Predef.implicitly[_root_.io.circe.Decoder[$typ]]"""
-        }
 
-        val fieldsDef: Seq[Stat] = {
-          val body =
-            Term.Apply(q"_root_.scala.collection.immutable.Map", fields)
-          Seq(q"def fields = $body")
+        val fieldsDef: Stat = {
+          val body = Term.Apply(q"_root_.scala.collection.immutable.Map", fields)
+          q"def fields = $body"
         }
         val typReader = genReader(tname, flatParams)
-        val newStats = Seq(typReader) ++ stats
+        val newStats = Seq(fieldsDef) ++ Seq(typReader) ++ stats
         println(types)
         val newTemplate = template"""
         { ..$earlyStats } with ..$ctorcalls { $param => ..$newStats }
