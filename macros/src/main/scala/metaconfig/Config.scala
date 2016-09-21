@@ -4,8 +4,12 @@ import scala.annotation.compileTimeOnly
 import scala.collection.immutable.Seq
 import scala.meta._
 import scala.meta.tokens.Token.Constant
+import scala.util.control.NonFatal
 
-case class ConfigError(msg: String) extends Exception(msg)
+class Error(msg: String) extends Exception(msg)
+case class ConfigError(msg: String) extends Error(msg)
+case class ConfigErrors(es: Seq[Throwable])
+    extends Error(s"Errors: ${es.mkString("\n")}")
 
 trait Reader[T] {
   def read(any: Any): Result[T]
@@ -42,6 +46,17 @@ object Reader {
   implicit val boolR = instance[scala.Boolean] {
     case x: Boolean => Right(x)
   }
+  def seqR[T: Reader]: Reader[Seq[T]] = instance[Seq[T]] {
+    case lst: Seq[_] =>
+      val res = lst.map { t =>
+        implicitly[Reader[T]].read(t)
+      }
+      val lefts = res.collect { case Left(e) => e }
+      if (lefts.nonEmpty) Left(ConfigErrors(lefts))
+      else Right(res.collect { case Right(e) => e })
+  }
+
+  implicit val intsR: Reader[Seq[Int]] = seqR[Int]
 }
 
 @compileTimeOnly("@metaconfig.Config not expanded")
@@ -60,15 +75,17 @@ class Config extends scala.annotation.StaticAnnotation {
         }
       }
       val argLits = params.map(x => Lit(x.name.syntax))
+      NonFatal
       val classLit = Lit(typ.syntax)
       val constructor = Ctor.Ref.Name(typ.syntax)
       q"""val reader = new _root_.metaconfig.Reader[$typ] {
           override def read(any: Any): _root_.metaconfig.Result[$typ] = {
             any match {
               case _root_.metaconfig.String2AnyMap(map) =>
-                def get[T](
-                    path: String, default: T)(
-                    implicit ev: _root_.metaconfig.Reader[T]) = {
+                def get[T : Reader](
+                    path: String, default: T) = {
+                    val ev =implicitly[Reader[T]]
+
                   ev.read(map.getOrElse(path, default)) match {
                     case Right(e) => e.asInstanceOf[T]
                     case Left(e: java.lang.IllegalArgumentException) =>
@@ -87,7 +104,12 @@ class Config extends scala.annotation.StaticAnnotation {
                   val msg = "Invalid fields: " + invalidFields.mkString(", ")
                   Left(new _root_.metaconfig.ConfigError(msg))
                 } else {
-                  Right(new $constructor(..$defaultArgs))
+                  try {
+                    import _root_.metaconfig.Reader._
+                    Right(new $constructor(..$defaultArgs))
+                  } catch {
+                    case _root_.scala.util.control.NonFatal(e) => Left(e)
+                  }
                 }
             }
           }
@@ -111,7 +133,8 @@ class Config extends scala.annotation.StaticAnnotation {
         }
 
         val fieldsDef: Stat = {
-          val body = Term.Apply(q"_root_.scala.collection.immutable.Map", fields)
+          val body =
+            Term.Apply(q"_root_.scala.collection.immutable.Map", fields)
           q"def fields = $body"
         }
         val typReader = genReader(tname, flatParams)
